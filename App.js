@@ -15,8 +15,6 @@ import {
   LogBox,
   PermissionsAndroid
 } from 'react-native';
-import { BleManager } from 'react-native-ble-plx';
-import NetInfo from '@react-native-community/netinfo';
 import RNBluetoothClassic, {
   BluetoothDevice,
   BluetoothEventType
@@ -25,45 +23,18 @@ import RNBluetoothClassic, {
 LogBox.ignoreLogs(['new']);
 
 const App: () => Node = () => {
-  const manager = new BleManager();
-
   const [online, setOnline] = useState();
   const [bluetooth, setBluetooth] = useState();
   const [device, setDevice] = useState();
 
   useEffect(() => {
-    const fetchNetwork = async () => {
-      const state = await NetInfo.fetch();
-      setOnline(!!(state.isConnected && state.isInternetReachable));
-    };
-
-    // const fetchBLE = async () => {
-    //   const state = await manager.state();
-    //   setBluetooth(state);
-    // };
-
     const fetchBluetooth = async () => {
       const state = await RNBluetoothClassic.isBluetoothEnabled();
 
       setBluetooth(state);
     };
 
-    fetchNetwork();
-    // fetchBLE();
     fetchBluetooth();
-  }, []);
-
-  useEffect(() => {
-    const subscription = () => {
-      NetInfo.addEventListener(networkState => {
-        const state = !!(
-          networkState.isConnected && networkState.isInternetReachable
-        );
-        return setOnline(state);
-      });
-    };
-
-    return () => subscription();
   }, []);
 
   useEffect(() => {
@@ -89,53 +60,6 @@ const App: () => Node = () => {
 
     fetchDevice();
   }, []);
-
-  // useEffect(() => {
-  //   const subscription = manager.onStateChange(state => {
-  //     // if (state === 'PoweredOn') {
-  //     //   // scanAndConnect();
-  //     // }
-
-  //     setBluetooth(state);
-  //   });
-
-  //   return () => subscription.remove();
-  // }, []);
-
-  // const scanAndConnect = () => {
-  //   manager.startDeviceScan(null, null, (error, device) => {
-  //     if (error) {
-  //       return console.log(error);
-  //     }
-
-  //     //Encontrar alguma info que identifique a maleta e conectar e sincronizar
-  //     if (device.localName === 'e Watch') {
-  //       alert('Relógio');
-  //     }
-  //   });
-  // };
-
-  const startBLEScan = () => {
-    try {
-      manager.startDeviceScan(null, null, (e, d) => {
-        if (e) {
-          return console.log(e);
-        }
-
-        console.log(JSON.stringify(d, null, 2));
-      });
-    } catch (e) {
-      console.log(e);
-    }
-  };
-
-  const stopBLEScan = () => {
-    try {
-      manager.stopDeviceScan();
-    } catch (e) {
-      console.log(e);
-    }
-  };
 
   const requestAccessFineLocationPermission = async () => {
     const granted = await PermissionsAndroid.request(
@@ -200,8 +124,6 @@ const App: () => Node = () => {
           `
         }
       </Text>
-      <Button title='Start BLE Scan' onPress={startBLEScan} />
-      <Button title='Stop BLE Scan' onPress={stopBLEScan} />
       <Button title='Start Scan' onPress={startScan} />
       <Button title='Stop Scan' onPress={stopScan} />
       <Button title='Send Action' onPress={sendAction} />
