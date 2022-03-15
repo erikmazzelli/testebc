@@ -23,12 +23,16 @@ import RNBluetoothClassic, {
 LogBox.ignoreLogs(['new']);
 
 const App: () => Node = () => {
-  const [online, setOnline] = useState();
-  const [bluetooth, setBluetooth] = useState();
-  const [device, setDevice] = useState();
+  const [bluetooth, setBluetooth] = useState(false);
+  const [device, setDevice] = useState('...');
+  const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     const fetchBluetooth = async () => {
+      const isBluetoothAvailable = await RNBluetoothClassic.isBluetoothAvailable();
+
+      if (!isBluetoothAvailable) return setBluetooth('Not Available');
+
       const state = await RNBluetoothClassic.isBluetoothEnabled();
 
       setBluetooth(state);
@@ -38,27 +42,28 @@ const App: () => Node = () => {
   }, []);
 
   useEffect(() => {
-    const subscription = RNBluetoothClassic.onStateChanged(state => {
+    const fetchDevice = async () => {
+      const bondedDevices = await RNBluetoothClassic.getBondedDevices();
+      let filteredDevice;
+
+      bondedDevices.forEach(device => {
+        if (device.name === "Pitometria") {
+          filteredDevice = device;
+        }
+      });
+
+      setDevice(filteredDevice);
+    };
+
+    bluetooth && fetchDevice();
+  }, [bluetooth]);
+
+  useEffect(() => {
+    const subscription = RNBluetoothClassic.onStateChanged(async (state) => {
       setBluetooth(state.enabled);
     });
 
     return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
-    const fetchDevice = async () => {
-      try {
-        await RNBluetoothClassic.pairDevice('80:7D:3A:AF:F7:A2');
-
-        const device = await RNBluetoothClassic.accept({});
-
-        setDevice({ device });
-      } catch (e) {
-        console.log(e);
-      }
-    };
-
-    fetchDevice();
   }, []);
 
   const requestAccessFineLocationPermission = async () => {
@@ -86,10 +91,13 @@ const App: () => Node = () => {
 
       const devices = await RNBluetoothClassic.startDiscovery();
 
-      devices.forEach(device => {
-        console.log(device.name);
+      let deviceList = [];
+
+      devices.forEach((device, index) => {
+        deviceList[index] = `${device.name}`;
       });
 
+      console.log(deviceList);
     } catch (e) {
       console.log(e);
     }
@@ -103,9 +111,50 @@ const App: () => Node = () => {
     }
   };
 
-  const sendAction = async () => {
+  const startConnection = async () => {
     try {
-      console.log(device);
+      const response = await device.connect();
+      console.log(`Connection: ${response}`);
+      setConnected(response);
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const stopConnection = async () => {
+    try {
+      const response = await device.disconnect();
+      console.log(`Disconnection: ${response}`);
+      setConnected(!response);
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const sendAction = async (command) => {
+    command = String(command);
+
+    try {
+      if (device !== '...' && connected) {
+        await device.write(`AT+${command}\r\n`);
+
+        const response1 = await device.read();
+        const response2 = await device.read();
+
+        console.log(`
+        Response:
+        ${response1}
+        ${response2}
+        `);
+
+        return alert(`
+        Response:
+        ${response1}
+        ${response2}
+        `);
+      } else {
+        return alert('Dispositivo não pareado ou desconectado');
+      }
     } catch (e) {
       console.log(e);
     }
@@ -118,15 +167,39 @@ const App: () => Node = () => {
       <Text style={{ fontSize: 16 }}>
         {
           `
-          Online: ${online}
+          Bluetooth enabled: ${bluetooth}
 
-          Bluetooth: ${bluetooth}
+          Paired Device: ${device?.name || '...'}
+
+          Is Connected: ${connected}
           `
         }
       </Text>
-      <Button title='Start Scan' onPress={startScan} />
-      <Button title='Stop Scan' onPress={stopScan} />
-      <Button title='Send Action' onPress={sendAction} />
+      <Button
+        title='Start Scan'
+        onPress={startScan}
+        disabled={bluetooth === 'Not Available'}
+      />
+      <Button
+        title='Stop Scan'
+        onPress={stopScan}
+        disabled={bluetooth === 'Not Available'}
+      />
+      <Button
+        title='Start Connection'
+        onPress={startConnection}
+        disabled={bluetooth === 'Not Available'}
+      />
+      <Button
+        title='Stop Connection'
+        onPress={stopConnection}
+        disabled={bluetooth === 'Not Available'}
+      />
+      <Button
+        title='Send Action'
+        onPress={() => sendAction('MEDIDAS?')}
+        disabled={bluetooth === 'Not Available'}
+      />
     </SafeAreaView>
   );
 };
