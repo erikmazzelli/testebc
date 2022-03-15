@@ -47,7 +47,7 @@ const App: () => Node = () => {
       let filteredDevice;
 
       bondedDevices.forEach(device => {
-        if (device.name === "Pitometria") {
+        if (device.name === "IFC050P-A832A1974C2") {
           filteredDevice = device;
         }
       });
@@ -131,7 +131,7 @@ const App: () => Node = () => {
     }
   };
 
-  const sendAction = async (command) => {
+  const readAction = async (command) => {
     command = String(command);
 
     try {
@@ -142,19 +142,48 @@ const App: () => Node = () => {
         const response2 = await device.read();
 
         console.log(`
-        Response:
-        ${response1}
-        ${response2}
+          Response:
+          ${response1}
+          ${response2}
         `);
 
         return alert(`
-        Response:
-        ${response1}
-        ${response2}
+          Response:
+          ${response1}
+          ${response2}
         `);
       } else {
         return alert('Dispositivo não pareado ou desconectado');
       }
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const writeAction = async (command, value) => {
+    command = String(command);
+    value = String(value);
+
+    try {
+      if (device !== '...' && connected) {
+        await device.write(`AT+${command}=${value}\r\n`);
+        const response1 = await device.read();
+        const response2 = await device.read();
+        console.log(response1, response2);
+        return alert(response1, response2);
+      } else {
+        return alert('Dispositivo não pareado ou desconectado');
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const testIFC = async (command) => {
+    try {
+      await device.write(command);
+      const response = await device.read();
+      console.log(response);
     } catch (e) {
       console.log(e);
     }
@@ -175,7 +204,7 @@ const App: () => Node = () => {
           `
         }
       </Text>
-      <Button
+      {/* <Button
         title='Start Scan'
         onPress={startScan}
         disabled={bluetooth === 'Not Available'}
@@ -184,7 +213,7 @@ const App: () => Node = () => {
         title='Stop Scan'
         onPress={stopScan}
         disabled={bluetooth === 'Not Available'}
-      />
+      /> */}
       <Button
         title='Start Connection'
         onPress={startConnection}
@@ -195,9 +224,19 @@ const App: () => Node = () => {
         onPress={stopConnection}
         disabled={bluetooth === 'Not Available'}
       />
+      {/* <Button
+        title='Read Action'
+        onPress={() => readAction('MEDIDAS?')}
+        disabled={bluetooth === 'Not Available'}
+      />
       <Button
-        title='Send Action'
-        onPress={() => sendAction('MEDIDAS?')}
+        title='Write Action'
+        onPress={() => writeAction('DATAHORA', '150320221447000000')}
+        disabled={bluetooth === 'Not Available'}
+      /> */}
+      <Button
+        title='IFC050P'
+        onPress={() => testIFC('3')}
         disabled={bluetooth === 'Not Available'}
       />
     </SafeAreaView>
