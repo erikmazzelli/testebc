@@ -12,23 +12,23 @@ import {
   Button,
   SafeAreaView,
   Text,
-  LogBox,
-  BackHandler
+  BackHandler,
+  Switch
 } from 'react-native';
 import RNBluetoothClassic from 'react-native-bluetooth-classic';
-
-LogBox.ignoreLogs(['new']);
 
 const App: () => Node = () => {
   const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
   const [device, setDevice] = useState('...');
   const [connected, setConnected] = useState(false);
-  const [logEnabled, setTeste] = useState(false);
-  const [data, setData] = useState([]);
+  const [logEnabled, setLogEnabled] = useState(false);
+  const [switchEnabled, setSwitchEnabled] = useState(false);
+  const [fetching, setFetching] = useState(false);
 
   useEffect(() => {
-    const fetchBluetooth = async () => {
-      const isBluetoothAvailable = await RNBluetoothClassic.isBluetoothAvailable();
+    const checkBluetoothState = async () => {
+      const isBluetoothAvailable = await RNBluetoothClassic
+        .isBluetoothAvailable();
 
       if (!isBluetoothAvailable) return setBluetoothEnabled(false);
 
@@ -40,7 +40,7 @@ const App: () => Node = () => {
         try {
           await RNBluetoothClassic.requestBluetoothEnabled();
         } catch (e) {
-          if (e.message = 'User did not enable Bluetooth') {
+          if (e.message === 'User did not enable Bluetooth') {
             return BackHandler.exitApp();
           }
 
@@ -49,157 +49,205 @@ const App: () => Node = () => {
       }
     };
 
-    fetchBluetooth();
+    checkBluetoothState();
   }, [bluetoothEnabled]);
 
   useEffect(() => {
-    const fetchDevice = async () => {
+    const searchForDevices = async () => {
       const pairedDevices = await RNBluetoothClassic.getBondedDevices();
-
+      let desiredDevice = switchEnabled ? 'Pitometria' : 'ERIC_BT';
       const filteredDevice = pairedDevices.find(device => {
-        return device.name === 'Pitometria';
+        return device.name === desiredDevice;
       });
 
       setDevice(filteredDevice);
 
-      if (!filteredDevice) alert(
+      if (!filteredDevice) return alert(
         'Pairing with a compatible device is required'
       );
     };
 
-    bluetoothEnabled && fetchDevice();
-  }, [bluetoothEnabled]);
+    bluetoothEnabled && searchForDevices();
+  }, [bluetoothEnabled, switchEnabled]);
 
   useEffect(() => {
-    const subscription = RNBluetoothClassic.onStateChanged(state => {
-      setBluetoothEnabled(state.enabled);
+    const bluetoothStateListener = RNBluetoothClassic
+      .onStateChanged(state => {
+        setBluetoothEnabled(state.enabled);
 
-      if (!state.enabled) {
-        setConnected(state.enabled);
-        setDevice('...');
-      }
-    });
+        if (!state.enabled) {
+          setConnected(state.enabled);
+          setDevice('...');
+        }
+      });
 
-    return () => subscription.remove();
+    return () => bluetoothStateListener.remove();
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const date = new Date;
+    const disconnectionListener = RNBluetoothClassic
+      .onDeviceDisconnected(() => {
+        setConnected(false);
+      });
 
-      try {
-        await device.write('1');
+    return () => disconnectionListener.remove();
+  }, []);
 
-        const response = await device.read();
+  useEffect(() => {
+    let i = 0;
+    const executeRead = async () => {
+      while (logEnabled && i < 10) {
 
-        return console.log(`
-          Date (HH:MM:SS:Ms): ${date.getHours()}:${date.getMinutes().toLocaleString()}:${date.getSeconds()}:${date.getMilliseconds()}
-          Response: ${response}
-          `);
+        const write = await writeAction(
+          switchEnabled ?
+            'MEDIDAS' :
+            '1'
+        );
+        const available = await getAvailable();
+        const read = await readAction(available);
+        console.log('EXECUTANDO LEITURA');
+        await Promise.all([write, available, read]).then(values => {
+          console.log(values[2]);
+        });
+        i++;
+      };
+    };
 
-      } catch (e) {
-        console.log(e);
-      }
-    }, 1000);
-
-
-    if (!logEnabled) return clearInterval(interval);
-
-    return () => clearInterval(interval);
+    logEnabled && readFromDevice('MEDIDAS', 10);
   }, [logEnabled]);
 
-  const startConnection = async () => {
+  const toggleConnection = async () => {
     try {
       if (!connected) {
         const response = await device.connect();
         console.log(`Connection: ${response}`);
-        setConnected(response);
+        return setConnected(response);
       }
+
+      const response = await device.disconnect();
+      console.log(`Disconnection: ${response}`);
+      setConnected(!response);
     } catch (e) {
       console.log(e);
     }
   };
 
-  const stopConnection = async () => {
+  const toggleLogging = () => setLogEnabled(!logEnabled);
+
+  const writeAction = async (command) => {
     try {
-      if (connected) {
-        const response = await device.disconnect();
-        console.log(`Disconnection: ${response}`);
-        setConnected(!response);
-      }
+      await device.write(
+        switchEnabled ?
+          `AT+${command}?\r\n` :
+          command
+      );
     } catch (e) {
       console.log(e);
     }
   };
 
-  const startLog = () => {
-    setTeste(!logEnabled);
-    if (!logEnabled) {
-      console.log('Iniciando log');
-    } else {
-      console.log('Encerrando log');
-    }
-  };
-
-  const readAction = async (command) => {
-    command = String(command);
-
+  const getAvailable = async () => {
     try {
-      await device.write(`AT+${command}?\r\n`);
       const available = await device.available();
-
-      if (available > 0) {
-        for (let i = 0; i < available; i++) {
-          let response = await device.read();
-          console.log(i);
-          setData([response, ...data]);
-        }
-      }
-      console.log(data);
+      return available;
     } catch (e) {
       console.log(e);
     }
   };
 
-  const writeAction = async (command, value) => {
-    command = String(command);
-    value = String(value);
+  const readAction = async (available) => {
+    try {
+      if (available > 0) {
+        let data = [];
+        for (let i = 0; i < available; i++) {
+          data.push(await device.read());
+        }
+        return data;
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
 
+  const readFromDevice = async (command, iteracoes) => {
+    try {
+      let i = 1;
+      while (i <= iteracoes) {
+        console.log('Fetching');
+        const write = await writeAction(command);
+        const available = await getAvailable();
+        const read = await readAction(available);
+        await Promise.all([write, available, read]).then(values => {
+          console.log('Response: ', values[2]);
+        });
+        i++;
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const readFromEsp = async (command, iteracoes = 0) => {
+    try {
+      let i = 1;
+      while (i <= iteracoes) {
+        console.log('Fetching');
+        await writeAction(command);
+        const available = await getAvailable();
+        const read = await readAction(available);
+        console.log('Response: ', read);
+        i++;
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const writeOnDevice = async (command, value) => {
     try {
       await device.write(`AT+${command}=${value}\r\n`);
       const available = await device.available();
 
       if (available > 0) {
+        let data = [];
         for (let i = 0; i < available; i++) {
-          let data = await device.read();
-          console.log(data);
+          data.push(await device.read());
         }
+        return console.log(data);
       }
+      console.log('Leitura nula');
     } catch (e) {
       console.log(e);
     }
   };
 
-  // const testIFC = async (command) => {
-  //   try {
-  //     await device.write(command);
+  const asyncFunc = () => {
+    return new Promise((resolve, reject) => {
+      setFetching(true);
+      setTimeout(() => {
+        resolve('done');
+        setFetching(false);
+      }, 5000);
+    });
+  };
 
-  //     const available = await device.available();
-
-  //     if (available > 0) {
-  //       for (let i = 0; i < available; i++) {
-  //         const data = await device.read();
-  //         console.log(data);
-  //       }
-  //     }
-  //   } catch (e) {
-  //     console.log(e);
-  //   }
-  // };
+  const testAsync = async () => {
+    try {
+      console.log('Fetching');
+      const result = await asyncFunc();
+      console.log(result);
+    } catch (e) {
+      console.log(e);
+    }
+  };
 
   return (
     <SafeAreaView
-      style={{ flex: 1, justifyContent: 'space-evenly', alignItems: 'center' }}
+      style={{
+        flex: 1,
+        justifyContent: 'space-evenly',
+        alignItems: 'center'
+      }}
     >
       <Text style={{ fontSize: 16 }}>
         {
@@ -212,36 +260,37 @@ const App: () => Node = () => {
           `
         }
       </Text>
-      <Button
-        title='Start Connection'
-        onPress={startConnection}
-        disabled={!bluetoothEnabled}
+      <Switch
+        onValueChange={() => {
+          setConnected(false);
+          setSwitchEnabled(!switchEnabled);
+        }}
+        value={switchEnabled}
       />
       <Button
-        title='Stop Connection'
-        onPress={stopConnection}
+        title={connected ? 'Stop Connection' : 'Start Connection'}
+        onPress={toggleConnection}
         disabled={!bluetoothEnabled}
       />
       <Button
         title={logEnabled ? 'Stop Logging' : 'Start Logging'}
-        onPress={() => startLog()}
+        onPress={toggleLogging}
         disabled={!bluetoothEnabled}
       />
       <Button
         title='Read Action'
-        onPress={() => readAction('MEDIDAS')}
+        onPress={() =>
+          switchEnabled ?
+            readFromDevice('MEDIDAS') :
+            readFromEsp('1')
+        }
         disabled={!bluetoothEnabled}
       />
       <Button
         title='Write Action'
-        onPress={() => writeAction('DATAHORA', '170322073900')}
-        disabled={!bluetoothEnabled}
+        onPress={() => writeOnDevice('ARQUIVO_CONTEUDO', 'data/Conaut2.csv')}
+        disabled={!bluetoothEnabled || !switchEnabled}
       />
-      {/* <Button
-        title='IFC050P'
-        onPress={() => testIFC('1')}
-        disabled={!bluetoothEnabled}
-      /> */}
     </SafeAreaView>
   );
 };
